@@ -9987,8 +9987,7 @@ wl_cfgvendor_acs(struct wiphy *wiphy,
 	do {
 		/* get orignal HOSTAPD paramters */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0))
-		if (nla_parse(tb, BRCM_VENDOR_ATTR_ACS_LAST, (const struct nlattr *)data,
-				len, NULL, NULL) ||
+		if (nla_parse_deprecated(tb, BRCM_VENDOR_ATTR_ACS_LAST, (const struct nlattr *)data, len, NULL, NULL) ||
 #else
 		if (nla_parse(tb, BRCM_VENDOR_ATTR_ACS_LAST, (const struct nlattr *)data,
 				len, NULL) ||
