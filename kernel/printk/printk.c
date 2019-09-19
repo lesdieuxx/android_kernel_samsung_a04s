@@ -240,7 +240,7 @@ static void __up_console_sem(unsigned long ip)
 {
 	unsigned long flags;
 
-	mutex_release(&console_lock_dep_map, 1, ip);
+	mutex_release(&console_lock_dep_map, ip);
 
 	printk_safe_enter_irqsave(flags);
 	up(&console_sem);

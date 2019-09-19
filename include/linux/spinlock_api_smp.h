@@ -155,7 +155,7 @@ static inline void __raw_spin_lock(raw_spinlock_t *lock)
 
 static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 {
-	spin_release(&lock->dep_map, 1, _RET_IP_);
+	spin_release(&lock->dep_map, _RET_IP_);
 	dbg_snapshot_spinlock(lock, 3);
 	do_raw_spin_unlock(lock);
 	preempt_enable();
@@ -164,7 +164,7 @@ static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 static inline void __raw_spin_unlock_irqrestore(raw_spinlock_t *lock,
 					    unsigned long flags)
 {
-	spin_release(&lock->dep_map, 1, _RET_IP_);
+	spin_release(&lock->dep_map, _RET_IP_);
 	do_raw_spin_unlock(lock);
 	dbg_snapshot_spinlock(lock, 3);
 	local_irq_restore(flags);
@@ -173,7 +173,7 @@ static inline void __raw_spin_unlock_irqrestore(raw_spinlock_t *lock,
 
 static inline void __raw_spin_unlock_irq(raw_spinlock_t *lock)
 {
-	spin_release(&lock->dep_map, 1, _RET_IP_);
+	spin_release(&lock->dep_map, _RET_IP_);
 	do_raw_spin_unlock(lock);
 	dbg_snapshot_spinlock(lock, 3);
 	local_irq_enable();
@@ -182,7 +182,7 @@ static inline void __raw_spin_unlock_irq(raw_spinlock_t *lock)
 
 static inline void __raw_spin_unlock_bh(raw_spinlock_t *lock)
 {
-	spin_release(&lock->dep_map, 1, _RET_IP_);
+	spin_release(&lock->dep_map, _RET_IP_);
 	do_raw_spin_unlock(lock);
 	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 }
