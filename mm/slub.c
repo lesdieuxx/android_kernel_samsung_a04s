@@ -894,7 +894,7 @@ static int slab_pad_check(struct kmem_cache *s, struct page *page)
 		return 1;
 #endif
 	start = page_address(page);
-	length = PAGE_SIZE << compound_order(page);
+	length = page_size(page);
 	end = start + length;
 	remainder = length % s->size;
 	if (!remainder)
@@ -1174,13 +1174,14 @@ static void setup_object_debug(struct kmem_cache *s, struct page *page,
 	init_tracking(s, object);
 }
 
-static void setup_page_debug(struct kmem_cache *s, void *addr, int order)
+static
+void setup_page_debug(struct kmem_cache *s, struct page *page, void *addr)
 {
 	if (!(s->flags & SLAB_POISON))
 		return;
 
 	metadata_access_enable();
-	memset(addr, POISON_INUSE, PAGE_SIZE << order);
+	memset(addr, POISON_INUSE, page_size(page));
 	metadata_access_disable();
 }
 
@@ -1457,8 +1458,8 @@ slab_flags_t kmem_cache_flags(unsigned int object_size,
 #else /* !CONFIG_SLUB_DEBUG */
 static inline void setup_object_debug(struct kmem_cache *s,
 			struct page *page, void *object) {}
-static inline void setup_page_debug(struct kmem_cache *s,
-			void *addr, int order) {}
+static inline
+void setup_page_debug(struct kmem_cache *s, struct page *page, void *addr) {}
 
 static inline int alloc_debug_processing(struct kmem_cache *s,
 	struct page *page, void *object, unsigned long addr) { return 0; }
@@ -1751,7 +1752,7 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	struct kmem_cache_order_objects oo = s->oo;
 	gfp_t alloc_gfp;
 	void *start, *p, *next;
-	int idx, order;
+	int idx;
 	bool shuffle;
 #if defined(CONFIG_KDP) && defined(CONFIG_RKP)
 	void *virt_page = NULL;
@@ -1799,7 +1800,6 @@ def_alloc:
 #endif
 	page->objects = oo_objects(oo);
 
-	order = compound_order(page);
 	page->slab_cache = s;
 	__SetPageSlab(page);
 	if (page_is_pfmemalloc(page))
@@ -1809,30 +1809,8 @@ def_alloc:
 
 	start = page_address(page);
 
-	setup_page_debug(s, start, order);
-#ifdef CONFIG_KDP
-	if (s->name) {
-		u64 sc,va_page;
-		va_page = (u64)__va(page_to_phys(page));
+	setup_page_debug(s, page, start);
 
-		if (!strncmp(s->name, CRED_JAR_RO, strlen(CRED_JAR_RO))) {
-			for(sc = 0; sc < (1 << oo_order(oo)); sc++) {
-				uh_call(UH_APP_RKP, SET_CRED_RO, va_page, 0, 0, 0);
-				va_page += PAGE_SIZE;
-			}
-		} else if (!strncmp(s->name, TSEC_JAR, strlen(TSEC_JAR))) {
-			for(sc = 0; sc < (1 << oo_order(oo)); sc++) {
-				uh_call(UH_APP_RKP, SER_SP_RO, va_page, 0, 0, 0);
-				va_page += PAGE_SIZE;
-			}
-		} else if (!strncmp(s->name, VFSMNT_JAR, strlen(VFSMNT_JAR))) {
-			for(sc = 0; sc < (1 << oo_order(oo)); sc++) {
-				uh_call(UH_APP_RKP, SET_NS_RO, va_page, 0, 0, 0);
-				va_page += PAGE_SIZE;
-			}
-		}
-	}
-#endif
 	shuffle = shuffle_freelist(s, page);
 
 	if (!shuffle) {
@@ -4221,7 +4199,7 @@ size_t __ksize(const void *object)
 
 	if (unlikely(!PageSlab(page))) {
 		WARN_ON(!PageCompound(page));
-		return PAGE_SIZE << compound_order(page);
+		return page_size(page);
 	}
 
 	return slab_ksize(page->slab_cache);
