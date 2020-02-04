@@ -570,7 +570,7 @@ int mcp_open_session(struct mcp_session *session, struct mcp_open_info *info,
 		/* Get TA from registry */
 		obj = tee_object_get(info->uuid, false);
 		/* Tell SWd to load TA from SFS as not in registry */
-		if (IS_ERR(obj) && (PTR_ERR(obj) == -ENOENT))
+		if (PTR_ERR(obj) == -ENOENT)
 			obj = tee_object_select(info->uuid);
 	} else if (info->type == TEE_MC_DRIVER_UUID) {
 		/* Load driver using only uuid */
