@@ -7,5 +7,5 @@ config SECURE_CAMERA_USE
 	bool "Use secure camera"
 	depends on VENDER_DEFAULT
 	default n
-	---help---
+	help
 	  Use secure camera.

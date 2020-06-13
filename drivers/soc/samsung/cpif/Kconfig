@@ -1,7 +1,7 @@
 menuconfig EXYNOS_MODEM_IF
 	bool "Samsung Mobile CP Interface"
 	default n
-	---help---
+	help
 	  Samsung Dual Modem Interface Driver
 
 if EXYNOS_MODEM_IF
@@ -108,27 +108,27 @@ config HW_REV_DETECT
 config MODEM_IF_QOS
 	bool "Implement QoS"
 	default n
-	---help---
+	help
 	  This enables QoS
 
 config MODEM_IF_LEGACY_QOS
 	bool "Implement QoS for legacy buffer"
 	select MODEM_IF_QOS
 	default n
-	---help---
+	help
 	  This enables QoS for legacy buffer model
 
 config MODEM_IF_NET_GRO
 	bool "enable GRO feature"
 	default n
-	---help---
+	help
 	 This enables GRO(Generic Receive Offload) feature
 
 config SUSPEND_DURING_VOICE_CALL
 	bool "control wake_lock by voice call start/end notification"
 	depends on LINK_DEVICE_PCIE
 	default n
-	---help---
+	help
 	  This enables AP suspend during PCM over PCIE
 
 config CACHED_LEGACY_RAW_RX_BUFFER
@@ -138,59 +138,59 @@ config CACHED_LEGACY_RAW_RX_BUFFER
 config CPIF_TP_MONITOR
 	bool "Support CP network throughput monitor"
 	default n
-	---help---
+	help
 	  This enables CP network throughput monitor
 
 config LINK_DEVICE_PCIE_S2MPU
 	bool "Use PCIE S2MPU"
 	depends on LINK_DEVICE_PCIE
 	default n
-	---help---
+	help
 	  Gate some addresses AP and CP shared
 
 config CPIF_CHECK_SJTAG_STATUS
 	bool "Check secure JTAG status to disable CP memory dump"
 	default n
-	---help---
+	help
 	  Check secure JTAG status to disable CP memory dump
 
 config CP_LCD_NOTIFIER
 	bool "Enable LCD notifier for CP"
 	default n
-	---help---
+	help
 	  This enables LCD notifier for CP
 
 config CP_PKTPROC_PERF_TEST
 	bool "Enable pktproc performance test"
 	depends on CP_PKTPROC || CP_PKTPROC_V2
 	default n
-	---help---
+	help
 	  Test pktproc on AP side
 
 config LINK_DEVICE_PCIE_GPIO_WA
 	bool "Workaround for discarded GPIOs"
 	depends on LINK_DEVICE_PCIE
 	default n
-	---help---
+	help
 	  Use a GPIO for the other purpose instead
 
 config CP_GRO_EXCEPTION
 	bool "Disable GRO for clat tethering case"
 	default n
-	---help---
+	help
 	  Disable GRO for clat packets when usb tethering is enabled
 
 config CP_RESET_WA
 	bool "CP RESET WA"
 	depends on LINK_DEVICE_PCIE
 	default n
-	---help---
+	help
 	  CP RESET WA
 
 config CP_JUMBO_4K_WA
 	bool "Enable 4K jumbo frames for pktproc"
 	default n
-	---help---
+	help
 	  enable 4K jumbo frames for pktproc
 
 config SBD_BOOTLOG

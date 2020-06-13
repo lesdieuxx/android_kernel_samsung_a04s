@@ -4,6 +4,6 @@ config VIDEO_EXYNOS_MFC
 	depends on VIDEO_EXYNOS
 	select VIDEOBUF2_CORE
 	select VIDEOBUF2_DMA_SG
-	---help---
+	help
 	  MFC driver for V4L2.
 
