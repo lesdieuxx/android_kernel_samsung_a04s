@@ -7775,9 +7775,6 @@ void slsi_collect_chipset_logs(struct work_struct *work)
 	void                    *buffer = NULL;
 	size_t size;
 	size_t bytes = 0;
-#ifdef CONFIG_SCSC_WLBTD
-	int ret = 0;
-#endif
 	char build_id_fw[128];
 	char build_id_drv[64];
 	size_t total_header;
@@ -8050,8 +8047,6 @@ u8 *slsi_get_scan_extra_ies(struct slsi_dev *sdev, const u8 *ies, int total_len,
 	while (i < default_ie_len - 2) {
 		id = *(default_ies + i);
 		ie_len = *(default_ies + i + 1);
-		if (cur_len + ie_len + 2 > default_ie_len)
-			break;
 		if (!cfg80211_find_ie(id, ies, total_len)) {
 			memcpy(new_ies + cur_len, default_ies + i, ie_len + 2);
 			cur_len += (ie_len + 2);
