@@ -74,7 +74,7 @@ struct fpsimd_context {
 	struct _aarch64_ctx head;
 	__u32 fpsr;
 	__u32 fpcr;
-	__uint128_t vregs[32];
+	__u128 vregs[32];
 };
 
 /* ESR_EL1 context */
@@ -194,8 +194,8 @@ struct sve_context {
  *	-	----				-----------
  *	REGS					the entire SVE context
  *
- *	ZREGS	__uint128_t[SVE_NUM_ZREGS][vq]	all Z-registers
- *	ZREG	__uint128_t[vq]			individual Z-register Zn
+ *	ZREGS	__u128[SVE_NUM_ZREGS][vq]	all Z-registers
+ *	ZREG	__u128[vq]			individual Z-register Zn
  *
  *	PREGS	uint16_t[SVE_NUM_PREGS][vq]	all P-registers
  *	PREG	uint16_t[vq]			individual P-register Pn
