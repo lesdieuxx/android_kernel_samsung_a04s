@@ -130,6 +130,9 @@ struct acc_dev {
 
 	/* list of dead HID devices to unregister */
 	struct list_head	dead_hid_list;
+
+	/* usb accessory restriction flag */
+	bool usb_acc_restrict;
 };
 
 static struct usb_interface_descriptor acc_interface_desc = {
@@ -458,7 +461,7 @@ static int acc_hid_raw_request(struct hid_device *hid, unsigned char reportnum,
 	return 0;
 }
 
-static struct hid_ll_driver acc_hid_ll_driver = {
+struct hid_ll_driver acc_hid_ll_driver = {
 	.parse = acc_hid_parse,
 	.start = acc_hid_start,
 	.stop = acc_hid_stop,
@@ -559,7 +562,7 @@ static int create_bulk_endpoints(struct acc_dev *dev,
 	struct usb_ep *ep;
 	int i;
 
-	DBG(cdev, "create_bulk_endpoints dev: %p\n", dev);
+	DBG(cdev, "create_bulk_endpoints dev: %pK\n", dev);
 
 	ep = usb_ep_autoconfig(cdev->gadget, in_desc);
 	if (!ep) {
@@ -659,7 +662,7 @@ requeue_req:
 		r = -EIO;
 		goto done;
 	} else {
-		pr_debug("rx %p queue\n", req);
+		pr_debug("rx %pK queue\n", req);
 	}
 
 	/* wait for a request to complete */
@@ -682,7 +685,7 @@ copy_data:
 		if (req->actual == 0)
 			goto requeue_req;
 
-		pr_debug("rx %p %u\n", req, req->actual);
+		pr_debug("rx %pK %u\n", req, req->actual);
 		xfer = (req->actual < count) ? req->actual : count;
 		r = xfer;
 		if (copy_to_user(buf, req->buf, xfer))
@@ -712,16 +715,17 @@ static ssize_t acc_write(struct file *fp, const char __user *buf,
 	}
 
 	while (count > 0) {
-		if (!dev->online) {
+		/* get an idle tx request to use */
+		req = 0;
+		ret = wait_event_interruptible(dev->write_wq,
+			((req = req_get(dev, &dev->tx_idle)) || !dev->online));
+
+		if (!dev->online || dev->disconnected) {
 			pr_debug("acc_write dev->error\n");
 			r = -EIO;
 			break;
 		}
 
-		/* get an idle tx request to use */
-		req = 0;
-		ret = wait_event_interruptible(dev->write_wq,
-			((req = req_get(dev, &dev->tx_idle)) || !dev->online));
 		if (!req) {
 			r = ret;
 			break;
@@ -813,9 +817,10 @@ static int acc_open(struct inode *ip, struct file *fp)
 
 	if (atomic_xchg(&dev->open_excl, 1)) {
 		put_acc_dev(dev);
+		printk(KERN_INFO "usb: acc_open_EBUSY\n");
 		return -EBUSY;
 	}
-
+	printk(KERN_INFO "usb: acc_open\n");
 	dev->disconnected = 0;
 	fp->private_data = dev;
 	return 0;
@@ -845,6 +850,9 @@ static const struct file_operations acc_fops = {
 	.read = acc_read,
 	.write = acc_write,
 	.unlocked_ioctl = acc_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = acc_ioctl,
+#endif
 	.open = acc_open,
 	.release = acc_release,
 };
@@ -905,6 +913,10 @@ int acc_ctrlrequest(struct usb_composite_dev *cdev,
 	 */
 	if (!dev)
 		return -ENODEV;
+
+	/* Check if HID commands are restricted */
+	if (dev->usb_acc_restrict && (b_request == ACCESSORY_REGISTER_HID))
+		goto err;
 
 	if (b_requestType == (USB_DIR_OUT | USB_TYPE_VENDOR)) {
 		if (b_request == ACCESSORY_START) {
@@ -972,6 +984,8 @@ int acc_ctrlrequest(struct usb_composite_dev *cdev,
 			memset(dev->serial, 0, sizeof(dev->serial));
 			dev->start_requested = 0;
 			dev->audio_mode = 0;
+			strlcpy(dev->manufacturer, "Android", ACC_STRING_SIZE);
+			strlcpy(dev->model, "Android", ACC_STRING_SIZE);
 		}
 	}
 
@@ -996,6 +1010,26 @@ err:
 }
 EXPORT_SYMBOL_GPL(acc_ctrlrequest);
 
+int acc_ctrlrequest_composite(struct usb_composite_dev *cdev,
+			      const struct usb_ctrlrequest *ctrl)
+{
+	u16 w_length = le16_to_cpu(ctrl->wLength);
+
+	if (w_length > USB_COMP_EP0_BUFSIZ) {
+		if (ctrl->bRequestType & USB_DIR_IN) {
+			/* Cast away the const, we are going to overwrite on purpose. */
+			__le16 *temp = (__le16 *)&ctrl->wLength;
+
+			*temp = cpu_to_le16(USB_COMP_EP0_BUFSIZ);
+			w_length = USB_COMP_EP0_BUFSIZ;
+		} else {
+			return -EINVAL;
+		}
+	}
+	return acc_ctrlrequest(cdev, ctrl);
+}
+EXPORT_SYMBOL_GPL(acc_ctrlrequest_composite);
+
 static int
 __acc_function_bind(struct usb_configuration *c,
 			struct usb_function *f, bool configfs)
@@ -1005,7 +1039,7 @@ __acc_function_bind(struct usb_configuration *c,
 	int			id;
 	int			ret;
 
-	DBG(cdev, "acc_function_bind dev: %p\n", dev);
+	DBG(cdev, "acc_function_bind dev: %pK\n", dev);
 
 	if (configfs) {
 		if (acc_string_defs[INTERFACE_STRING_INDEX].id == 0) {
@@ -1107,7 +1141,7 @@ acc_function_unbind(struct usb_configuration *c, struct usb_function *f)
 static void acc_start_work(struct work_struct *data)
 {
 	char *envp[2] = { "ACCESSORY=START", NULL };
-
+	printk(KERN_INFO "usb: Send uevent, ACCESSORY=START\n");
 	kobject_uevent_env(&acc_device.this_device->kobj, KOBJ_CHANGE, envp);
 }
 
@@ -1183,7 +1217,7 @@ static void acc_hid_work(struct work_struct *data)
 	list_for_each_safe(entry, temp, &new_list) {
 		hid = list_entry(entry, struct acc_hid_dev, list);
 		if (acc_hid_init(hid)) {
-			pr_err("can't add HID device %p\n", hid);
+			pr_err("can't add HID device %pK\n", hid);
 			acc_hid_delete(hid);
 		} else {
 			spin_lock_irqsave(&dev->lock, flags);
@@ -1339,8 +1373,57 @@ static struct configfs_item_operations acc_item_ops = {
 	.release        = acc_attr_release,
 };
 
+/* configfs attributes for usb_acc_restrict */
+static ssize_t usb_acc_restrict_show(struct config_item *item, char *page)
+{
+	struct acc_dev *dev = get_acc_dev();
+	int ret;
+
+	if (!dev)
+		return -ENODEV;
+
+	ret = sprintf(page, "%d\n", dev->usb_acc_restrict ? 1 : 0);
+	put_acc_dev(dev);
+	return ret;
+}
+
+static ssize_t usb_acc_restrict_store(struct config_item *item,
+				 const char *page, size_t len)
+{
+	struct acc_dev *dev = get_acc_dev();
+	bool val = false;
+
+	if (!dev)
+		return -ENODEV;
+
+	if (len == 1 && page[0] == '1')
+		val = true;
+	else if (len == 1 && page[0] == '0')
+		val = false;
+	else {
+		put_acc_dev(dev);
+		return -EINVAL;
+	}
+
+	dev->usb_acc_restrict = val;
+
+	pr_info("USB accessory HID restriction %s\n",
+		dev->usb_acc_restrict ? "enabled" : "disabled");
+
+	put_acc_dev(dev);
+	return len;
+}
+
+CONFIGFS_ATTR(usb_acc_, restrict);
+
+static struct configfs_attribute *acc_attrs[] = {
+	&usb_acc_attr_restrict,
+	NULL,
+};
+
 static struct config_item_type acc_func_type = {
 	.ct_item_ops    = &acc_item_ops,
+	.ct_attrs		= acc_attrs,
 	.ct_owner       = THIS_MODULE,
 };
 
