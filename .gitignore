@@ -34,6 +34,7 @@
 *.o.*
 *.order
 *.patch
+*.pyc
 *.s
 *.so
 *.so.dbg
@@ -132,3 +133,6 @@ all.config
 
 # Kdevelop4
 *.kdev4
+
+# Output file
+/out
