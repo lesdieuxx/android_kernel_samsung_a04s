@@ -1231,6 +1231,7 @@ static int dw_mci_edmac_start_dma(struct dw_mci *host, unsigned int sg_len)
 	int ret = 0;
 
 	/* Set external dma config: burst size, burst width */
+	memset(&cfg, 0, sizeof(cfg));
 	cfg.dst_addr = host->phy_regs + fifo_offset;
 	cfg.src_addr = cfg.dst_addr;
 	cfg.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
@@ -2816,6 +2817,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				dw_mci_fifo_reset(host->dev, host);
 				dw_mci_stop_dma(host);
 				send_stop_abort(host, data);
+				dw_mci_stop_dma(host);
 				state = STATE_SENDING_STOP;
 				dw_mci_debug_req_log(host, host->mrq, STATE_REQ_CMD_PROCESS, state);
 				break;
@@ -2846,6 +2848,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				dw_mci_stop_dma(host);
 				if (!(host->data_status & (SDMMC_INT_DRTO | SDMMC_INT_EBE)))
 					send_stop_abort(host, data);
+				dw_mci_stop_dma(host);
 				state = STATE_DATA_ERROR;
 				dw_mci_debug_req_log(host,
 						     host->mrq, STATE_REQ_DATA_PROCESS, state);
@@ -2883,6 +2886,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				dw_mci_stop_dma(host);
 				if (!(host->data_status & (SDMMC_INT_DRTO | SDMMC_INT_EBE)))
 					send_stop_abort(host, data);
+				dw_mci_stop_dma(host);
 				state = STATE_DATA_ERROR;
 				dw_mci_debug_req_log(host, host->mrq,
 						     STATE_REQ_DATA_PROCESS, state);
@@ -4763,6 +4767,10 @@ int dw_mci_probe(struct dw_mci *host, struct platform_device *pdev)
 	host->biu_clk = devm_clk_get(host->dev, "biu");
 	if (IS_ERR(host->biu_clk)) {
 		dev_dbg(host->dev, "biu clock not available\n");
+		ret = PTR_ERR(host->biu_clk);
+		if (ret == -EPROBE_DEFER)
+			return ret;
+
 	} else {
 		ret = clk_prepare_enable(host->biu_clk);
 		if (ret) {
@@ -4778,6 +4786,10 @@ int dw_mci_probe(struct dw_mci *host, struct platform_device *pdev)
 	host->ciu_clk = devm_clk_get(host->dev, "ciu");
 	if (IS_ERR(host->ciu_clk)) {
 		dev_dbg(host->dev, "ciu clock not available\n");
+		ret = PTR_ERR(host->ciu_clk);
+		if (ret == -EPROBE_DEFER)
+			goto err_clk_biu;
+
 		host->bus_hz = host->pdata->bus_hz;
 	} else {
 		ret = dw_mci_ciu_clk_en(host);

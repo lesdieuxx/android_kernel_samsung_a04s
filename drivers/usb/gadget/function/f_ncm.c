@@ -23,10 +23,13 @@
 #include <linux/crc32.h>
 
 #include <linux/usb/cdc.h>
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 #include <linux/miscdevice.h>
+#endif
 #include "u_ether.h"
 #include "u_ether_configfs.h"
 #include "u_ncm.h"
+#include "configfs.h"
 
 /*
  * This function is a "CDC Network Control Model" (CDC NCM) Ethernet link.
@@ -39,9 +42,7 @@
 
 /* to trigger crc/non-crc ndp signature */
 
-#define NCM_NDP_HDR_CRC_MASK	0x01000000
 #define NCM_NDP_HDR_CRC		0x01000000
-#define NCM_NDP_HDR_NOCRC	0x00000000
 
 enum ncm_notify_state {
 	NCM_NOTIFY_NONE,		/* don't notify */
@@ -83,8 +84,12 @@ static inline struct f_ncm *func_to_ncm(struct usb_function *f)
 /* peak (theoretical) bulk transfer rate in bits-per-second */
 static inline unsigned ncm_bitrate(struct usb_gadget *g)
 {
-	if (gadget_is_superspeed(g) && g->speed >= USB_SPEED_SUPER)
-		return 13 * 1024 * 8 * 1000 * 8;
+	if (!g)
+		return 0;
+	else if (gadget_is_superspeed(g) && g->speed >= USB_SPEED_SUPER_PLUS)
+		return 4250000000U;
+	else if (gadget_is_superspeed(g) && g->speed == USB_SPEED_SUPER)
+		return 3750000000U;
 	else if (gadget_is_dualspeed(g) && g->speed == USB_SPEED_HIGH)
 		return 13 * 512 * 8 * 1000 * 8;
 	else
@@ -100,8 +105,8 @@ static inline unsigned ncm_bitrate(struct usb_gadget *g)
  * because it's used by default by the current linux host driver
  */
 #ifdef CONFIG_USB_NCM_SUPPORT_MTU_CHANGE
-#define NTB_DEFAULT_IN_SIZE	(16384 * 4)
-#define NCM_MAX_DGRAM_SIZE	(16384 * 4 - 1 - NCM_HEADER_SIZE - 1)
+#define NTB_DEFAULT_IN_SIZE	16384
+#define NCM_MAX_DGRAM_SIZE	9014
 #define MAX_NDP_DATAGRAMS	1
 #define NTH_NDP_OUT_TOTAL_SIZE	\
 		(ALIGN(sizeof(struct usb_cdc_ncm_nth16),	\
@@ -111,7 +116,7 @@ static inline unsigned ncm_bitrate(struct usb_gadget *g)
 #else
 #define NTB_DEFAULT_IN_SIZE	USB_CDC_NCM_NTB_MIN_IN_SIZE
 #endif
-#define NTB_OUT_SIZE		(16384 * 4)
+#define NTB_OUT_SIZE		16384
 
 /*
  * skbs of size less than that will not be aligned
@@ -552,6 +557,7 @@ static inline void ncm_reset_values(struct f_ncm *ncm)
 {
 	ncm->parser_opts = &ndp16_opts;
 	ncm->is_crc = false;
+	ncm->ndp_sign = ncm->parser_opts->ndp_sign;
 	ncm->port.cdc_filter = DEFAULT_FILTER;
 	/* doesn't make sense for ncm, fixed size used */
 	ncm->port.header_len = 0;
@@ -743,7 +749,7 @@ static void ncm_setdgram_complete(struct usb_ep *ep, struct usb_request *req)
 	ncm->dgramsize = dgram_size;
 
 	if (ncm->net)
-		ncm->net->mtu = NCM_MTU_SIZE; //ncm->dgramsize - ETH_HLEN;
+		ncm->net->mtu = ncm->dgramsize - ETH_HLEN;
 
 	printk(KERN_ERR"usb:%s * Set MTU SIZE %d *\n", __func__, dgram_size);
 
@@ -883,25 +889,20 @@ static int ncm_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)
 		| USB_CDC_SET_CRC_MODE:
 	{
-		int ndp_hdr_crc = 0;
-
 		if (w_length != 0 || w_index != ncm->ctrl_id)
 			goto invalid;
 		switch (w_value) {
 		case 0x0000:
 			ncm->is_crc = false;
-			ndp_hdr_crc = NCM_NDP_HDR_NOCRC;
 			DBG(cdev, "non-CRC mode selected\n");
 			break;
 		case 0x0001:
 			ncm->is_crc = true;
-			ndp_hdr_crc = NCM_NDP_HDR_CRC;
 			DBG(cdev, "CRC mode selected\n");
 			break;
 		default:
 			goto invalid;
 		}
-		ncm->ndp_sign = ncm->parser_opts->ndp_sign | ndp_hdr_crc;
 		value = 0;
 		break;
 	}
@@ -943,6 +944,8 @@ invalid:
 			ctrl->bRequestType, ctrl->bRequest,
 			w_value, w_index, w_length);
 	}
+	ncm->ndp_sign = ncm->parser_opts->ndp_sign |
+		(ncm->is_crc ? NCM_NDP_HDR_CRC : 0);
 
 	/* respond with data transfer or status phase? */
 	if (value >= 0) {
@@ -1034,7 +1037,7 @@ static int ncm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 				return PTR_ERR(net);
 #ifdef CONFIG_USB_NCM_SUPPORT_MTU_CHANGE
 			ncm->net = net;
-			ncm->net->mtu = NCM_MTU_SIZE; //ncm->dgramsize - ETH_HLEN;
+			ncm->net->mtu = ncm->dgramsize - ETH_HLEN;
 			printk(KERN_DEBUG "activate ncm setting MTU size (%d)\n", ncm->net->mtu);
 #endif
 		}
@@ -1097,7 +1100,8 @@ int ncm_add_datagram(struct gether *port, __le16 *tmp, int length, int holdcnt)
 	int tmp_val;
 	__le16 *tmp_addr;
 	u32 prev_index, prev_len;
-	int i;
+	/* fix prevent */
+	int i = 0;
 
 	tmp += 4;
 	tmp_val = get_unaligned_le16(tmp);
@@ -1150,7 +1154,7 @@ static struct sk_buff *ncm_wrap_ntb(struct gether *port,
 	ndp_pad = ALIGN(ncb_len, ndp_align) - ncb_len;
 	ncb_len += ndp_pad;
 	ncb_len += opts->ndp_size;
-	ncb_len += 2 * 2 * opts->dgram_item_len * NCM_MAX_DATAGRAM; /* Datagram entry */
+	ncb_len += 2 * 2 * opts->dgram_item_len; /* Datagram entry */
 	ncb_len += 2 * 2 * opts->dgram_item_len; /* Zero datagram entry */
 	pad = ALIGN(ncb_len, div) + rem - ncb_len;
 	ncb_len += pad;
@@ -1256,7 +1260,8 @@ static int ncm_unwrap_ntb(struct gether *port,
 			  struct sk_buff_head *list)
 {
 	struct f_ncm	*ncm = func_to_ncm(&port->func);
-	__le16		*tmp = (void *) skb->data;
+	unsigned char	*ntb_ptr = skb->data;
+	__le16		*tmp;
 	unsigned	index, index2;
 	unsigned	dg_len, dg_len2;
 	unsigned	ndp_len;
@@ -1268,6 +1273,10 @@ static int ncm_unwrap_ntb(struct gether *port,
 	const struct ndp_parser_opts *opts = ncm->parser_opts;
 	unsigned	crc_len = ncm->is_crc ? sizeof(uint32_t) : 0;
 	int		dgram_counter;
+	int		to_process = skb->len;
+
+parse_ntb:
+	tmp = (__le16 *)ntb_ptr;
 
 	/* dwSignature */
 	if (get_unaligned_le32(tmp) != opts->nth_sign) {
@@ -1381,6 +1390,23 @@ static int ncm_unwrap_ntb(struct gether *port,
 
 	VDBG(port->func.config->cdev,
 	     "Parsed NTB with %d frames\n", dgram_counter);
+
+	to_process -= block_len;
+
+	/*
+	 * Windows NCM driver avoids USB ZLPs by adding a 1-byte
+	 * zero pad as needed.
+	 */
+	if (to_process == 1 &&
+	    (*(unsigned char *)(ntb_ptr + block_len) == 0x00)) {
+		to_process--;
+	} else if ((to_process > 0) && (block_len != 0)) {
+		ntb_ptr = (unsigned char *)(ntb_ptr + block_len);
+		goto parse_ntb;
+	}
+
+	dev_consume_skb_any(skb);
+
 	return 0;
 err:
 	printk(KERN_DEBUG"usb:%s Dropped %d \n", __func__, skb->len);
@@ -1460,7 +1486,7 @@ ncm_bind(struct usb_configuration *c, struct usb_function *f)
 	struct usb_composite_dev *cdev = c->cdev;
 	struct f_ncm		*ncm = func_to_ncm(f);
 	struct usb_string	*us;
-	int			status;
+	int			status = 0;
 	struct usb_ep		*ep;
 	struct f_ncm_opts	*ncm_opts;
 
@@ -1511,8 +1537,10 @@ ncm_bind(struct usb_configuration *c, struct usb_function *f)
 
 	us = usb_gstrings_attach(cdev, ncm_strings,
 				 ARRAY_SIZE(ncm_string_defs));
-	if (IS_ERR(us))
-		return PTR_ERR(us);
+	if (IS_ERR(us)) {
+		status = PTR_ERR(us);
+		goto fail;
+	}
 	ncm_control_intf.iInterface = us[STRING_CTRL_IDX].id;
 	ncm_data_nop_intf.iInterface = us[STRING_DATA_IDX].id;
 	ncm_data_intf.iInterface = us[STRING_DATA_IDX].id;
@@ -1528,6 +1556,10 @@ ncm_bind(struct usb_configuration *c, struct usb_function *f)
 
 	ncm_control_intf.bInterfaceNumber = status;
 	ncm_union_desc.bMasterInterface0 = status;
+
+	if (cdev->use_os_string)
+		f->os_desc_table[0].if_id =
+			ncm_iad_desc.bFirstInterface;
 
 	status = usb_interface_id(c, f);
 	if (status < 0)
@@ -1665,7 +1697,10 @@ extern int uether_queue_index;
 static ssize_t terminal_version_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	int ret, i;
+	int ret;
+#ifdef CHECK_ETHER_TX_LEN
+	int i;
+#endif
 	ret = sprintf(buf, "major %x minor %x vendor %x\n",
 			terminal_mode_version & 0xff,
 			(terminal_mode_version >> 8 & 0xff),
@@ -1689,14 +1724,19 @@ static ssize_t terminal_version_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	int value;
-	sscanf(buf, "%x", &value);
-	terminal_mode_version = (u16)value;
-	printk(KERN_DEBUG "usb: %s buf=%s\n", __func__, buf);
-	/* only set ncm ready when terminal verision value is not zero */
-	if (value)
-		set_ncm_ready(true);
-	else
-		set_ncm_ready(false);
+
+	if (sscanf(buf, "%x", &value) == 1) {
+		terminal_mode_version = (u16)value;
+		printk(KERN_DEBUG "usb: %s buf=%s\n", __func__, buf);
+		/* only set ncm ready when terminal verision value is not zero */
+		if (value)
+			set_ncm_ready(true);
+		else
+			set_ncm_ready(false);
+	} else {
+		printk(KERN_DEBUG "usb: %s Bad format\n", __func__);
+	}
+
 	return size;
 }
 
@@ -1854,10 +1894,15 @@ To prevent crash in case we are not bound.
 static struct usb_function_instance *ncm_alloc_inst(void)
 {
 	struct f_ncm_opts *opts;
+	struct usb_os_desc *descs[1];
+	char *names[1];
+	struct config_group *ncm_interf_group;
 
 	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
 	if (!opts)
 		return ERR_PTR(-ENOMEM);
+	opts->ncm_os_desc.ext_compat_id = opts->ncm_ext_compat_id;
+
 	mutex_init(&opts->lock);
 	opts->func_inst.free_func_inst = ncm_free_inst;
 	config_group_init_type_name(&opts->func_inst.group, "", &ncm_func_type);
@@ -1948,14 +1993,6 @@ static struct usb_function *ncm_alloc(struct usb_function_instance *fi)
 	ncm->port.wrap = ncm_wrap_ntb;
 	ncm->port.unwrap = ncm_unwrap_ntb;
 
-	ncm->port.is_fixed = false;
-	ncm->port.multi_pkt_xfer = 1;
-	ncm->port.ul_max_pkts_per_xfer = 1;
-	ncm->port.dl_max_pkts_per_xfer = NCM_MAX_DATAGRAM;
-
-	if (ncm->port.multi_pkt_xfer == 1)
-		ncm->port.wrap = NULL;
-
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 	ncm_function_init();
 #endif
@@ -1965,4 +2002,3 @@ static struct usb_function *ncm_alloc(struct usb_function_instance *fi)
 DECLARE_USB_FUNCTION_INIT(ncm, ncm_alloc_inst, ncm_alloc);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Yauheni Kaliuta");
-
