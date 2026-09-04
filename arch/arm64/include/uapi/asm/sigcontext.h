@@ -70,6 +70,18 @@ struct _aarch64_ctx {
 
 #define FPSIMD_MAGIC	0x46508001
 
+/*
+ * While compiling libraries for armv7 android, __u128 wouldn't get resolved
+ * so we need to *fake* the type for compilation. Proper 64-bit systems will
+ * still get the  compiler __u128 type.
+ */
+#ifndef __SIZEOF_INT128__
+typedef struct {
+	__u64 a;
+	__u64 b;
+} __u128;
+#endif
+
 struct fpsimd_context {
 	struct _aarch64_ctx head;
 	__u32 fpsr;
