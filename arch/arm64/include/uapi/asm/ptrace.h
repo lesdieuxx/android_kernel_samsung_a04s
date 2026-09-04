@@ -84,7 +84,7 @@ struct user_fpsimd_state {
 };
 
 struct fpsimd_kernel_state {
-	__uint128_t vregs[32];
+	__u128 vregs[32];
 	__u32 fpsr;
 	__u32 fpcr;
 	unsigned int cpu;
