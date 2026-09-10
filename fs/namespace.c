@@ -3854,7 +3854,6 @@ static bool mnt_already_visible(struct mnt_namespace *ns,
 		/* Don't miss readonly hidden in the superblock flags */
 		if (sb_rdonly(mnt->mnt.mnt_sb))
 			mnt_flags |= MNT_LOCK_READONLY;
-#endif
 		/* Verify the mount flags are equal to or more permissive
 		 * than the proposed new mount.
 		 */
