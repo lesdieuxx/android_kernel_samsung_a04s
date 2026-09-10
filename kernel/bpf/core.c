@@ -34,10 +34,6 @@
 #include <linux/log2.h>
 #include <linux/nospec.h>
 
-#ifdef CONFIG_RKP
-#include <linux/rkp.h>
-#endif
-
 #include <asm/barrier.h>
 #include <asm/unaligned.h>
 

@@ -59,11 +59,7 @@ struct fs_context;
 struct fs_parameter;
 enum fs_value_type;
 
-#ifdef CONFIG_KDP_CRED
-#include <linux/kdp.h>
-#else
 #define security_integrity_current()  0
-#endif
 
 /* Default (no) options for the capable function */
 #define CAP_OPT_NONE 0x0

@@ -69,9 +69,6 @@ struct fs_context;
 struct vfsmount {
 	struct dentry *mnt_root;	/* root of the mounted tree */
 	struct super_block *mnt_sb;	/* pointer to superblock */
-#ifdef CONFIG_KDP_NS
-	struct mount *bp_mount;	/* pointer to mount*/
-#endif
 	int mnt_flags;
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
