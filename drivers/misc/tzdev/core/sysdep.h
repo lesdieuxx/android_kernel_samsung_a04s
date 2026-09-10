@@ -207,7 +207,7 @@ int sysdep_idr_alloc(struct idr *idr, void *mem);
 int sysdep_idr_alloc_in_range(struct idr *idr, void *mem,
 		unsigned long start, unsigned long end);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+#if 1
 #define sysdep_mm_down_read(mm)			down_read(&mm->mmap_lock)
 #define sysdep_mm_up_read(mm)			up_read(&mm->mmap_lock)
 #define sysdep_mm_down_write(mm)		down_write(&mm->mmap_lock)
